@@ -1,0 +1,18 @@
+# Python version
+FROM python:3.12.4
+
+# Working directory - note command is executed from this root directory
+WORKDIR </working_directory>
+
+COPY . .
+
+RUN pip3 install -r requirements.txt
+
+# Port to expose 
+EXPOSE 8501
+
+# Health check 
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
+
+# Entry command to run for application to start server - NOTE - replace 1_Welcome.py with main Streamlit page name. 
+ENTRYPOINT ["streamlit", "run", "1_Welcome.py", "--server.port=8501", "--server.address=0.0.0.0"]
