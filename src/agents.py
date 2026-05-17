@@ -1,8 +1,16 @@
+"""
+TODO:
+1. Incorporate FunctionAgents
+2. Remove inheritence to decouple memory and LLM instantiation. 
+3. Update the memory parameter to the latest abstractions. 
+"""
+
 from src.composable_memory import ComposableMemory
 from src.llm_embedding import LLM
 from typing import (
     Optional,
-    List
+    List,
+    Literal
 )
 from llama_index.core.memory import BaseMemory
 from llama_index.core.tools import BaseTool
@@ -24,7 +32,7 @@ class Agent(ComposableMemory, LLM):
 
     @staticmethod
     def agent(
-        agent: str = 'React',
+        agent: Literal["React", "OpenAI"] = "React",
         tools: Optional[List[BaseTool]] = None,
         memory: Optional[BaseMemory] = ComposableMemory.composable_memory() or None,
         llm: LLM = LLM().llm() or Settings.llm,
@@ -45,23 +53,31 @@ class Agent(ComposableMemory, LLM):
 
         Returns:
             ReActAgent | OpenAIAgent: An agent object.
+
+        Raises:
+            ValueError: If the provided agent is not specified raise error. 
         
         """
-        if agent == 'React':
-            agent = ReActAgent.from_tools(
-            tools=tools,
-            llm=llm,
-            memory=memory,
-            verbose=verbose,
-            **kwargs
-        )
-        if agent == 'OpenAI': 
-            
-            agent = OpenAIAgent.from_tools(
-            tools=tools,
-            llm=llm,
-            memory=memory,
-            verbose=verbose,
-            **kwargs
+        agent_mapper = {
+            "React": ReActAgent.from_tools(
+                tools=tools,
+                llm=llm,
+                memory=memory,
+                verbose=verbose,
+                **kwargs
+            ),
+            "OpenAI": OpenAIAgent.from_tools(
+                tools=tools,
+                llm=llm,
+                memory=memory,
+                verbose=verbose,
+                **kwargs
             )
-        return agent 
+        }
+
+        try:
+            return agent_mapper.get(agent)
+        except ValueError as e:
+            raise ValueError("Provided agent is not supported.")
+
+        

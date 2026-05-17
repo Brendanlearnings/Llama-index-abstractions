@@ -1,9 +1,17 @@
 """
-TODO - incorporate further readers into package. 
+TODO:
+1. Incorporate further readers into package. 
+2. Update Llama Parse / Cloud to V2 - full update of extract file.
+3. Enhance Storage Context to integrate better into Weaviate
+4. Enhance Error Handling
+5. Update docstrings
+6. Decouple weaviate lib. 
 """
 from dotenv import load_dotenv
 import os
-from typing import List, Type, Sequence
+from typing import List, Type, Sequence, Literal, Dict, Any, Optional
+from pydantic import BaseModel 
+
 from llama_index.core import Settings, Document
 from llama_index.core.schema import BaseNode
 from llama_index.core import (
@@ -14,6 +22,32 @@ from llama_index.core import (
     KeywordTableIndex,
     PropertyGraphIndex
 )
+from llama_parse import LlamaParse
+from llama_index.core import (
+    SimpleDirectoryReader,
+    VectorStoreIndex,
+    SummaryIndex,
+    TreeIndex,
+    KeywordTableIndex,
+    PropertyGraphIndex
+)
+from llama_index.core.ingestion import IngestionPipeline
+from llama_index.core.extractors import (
+        SummaryExtractor,
+        QuestionsAnsweredExtractor,
+        TitleExtractor,
+        KeywordExtractor,
+)
+from llama_index.core.node_parser import SemanticSplitterNodeParser
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.core.node_parser.text.utils import split_by_sentence_tokenizer
+from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.node_parser import SentenceWindowNodeParser
+from llama_index.core.node_parser.text.utils import split_by_sentence_tokenizer
+from llama_index.core.node_parser import TokenTextSplitter
+from llama_index.vector_stores.weaviate import WeaviateVectorStore
+
+from src.vector_db import VectorDB
 
 load_dotenv()
 
@@ -31,7 +65,7 @@ class Ingestion:
         multiple: bool = False,
         parse: bool = True,
         parse_output: str = "markdown",
-        parse_mode: str = "auto",
+        parse_mode: Literal["auto", "continuous", "fast", "premium"] = "auto",
         parse_file_type: str = ".pdf",
         progress_ind: bool = True,
         **kwargs
@@ -54,8 +88,7 @@ class Ingestion:
         Returns:
             A list of Llama Index object type Documents or a single Document.  
         """
-        from llama_parse import LlamaParse
-        from llama_index.core import SimpleDirectoryReader
+
         parse_format = {
             "auto": "auto_mode",
             "continuous": "continuous_mode",
@@ -72,7 +105,6 @@ class Ingestion:
         file_extractor = {parse_file_type: parser}
         # Conditional checks to account for variations in parameters settings. Creates the nodes from the input document/s.
         if multiple and parse:
-            
             documents = SimpleDirectoryReader(
                 input_dir=input,
                 file_extractor=file_extractor            
@@ -99,8 +131,9 @@ class Ingestion:
     @staticmethod
     def transform(
         documents: List[Document] | Document,
-        transformation_type: str = "token",
-        transformation_params: dict = None
+        transformation_params: Dict[str, Any],
+        metadata_collectors: Optional[List[Literal["title", "summary", "QA", "keyword"]]],
+        transformation_type: Literal["semantic", "sentence", "sentence_window", "token"] = ["semantic"],
     ) -> Sequence[BaseNode]:
         """Transformation to be applied over supplied Document/s.
 
@@ -122,92 +155,62 @@ class Ingestion:
             - Sentence Window: https://docs.llamaindex.ai/en/stable/api_reference/node_parsers/sentence_window/#llama_index.core.node_parser.SentenceWindowNodeParser
             - Token Text: https://docs.llamaindex.ai/en/stable/api_reference/node_parsers/token_text_splitter/#llama_index.core.node_parser.TokenTextSplitter
         """
-        from llama_index.core.ingestion import IngestionPipeline
-        from llama_index.core.extractors import (
-                SummaryExtractor,
-                QuestionsAnsweredExtractor,
-                TitleExtractor,
-                KeywordExtractor,
-            )
         transformations = []
         if not transformation_params:
             raise ValueError('Kindly specify the transformation you would like to apply.')
-        else:
-            if transformation_type == "semantic":
-                from llama_index.core.node_parser import SemanticSplitterNodeParser
-                from llama_index.embeddings.openai import OpenAIEmbedding
-                from llama_index.core.node_parser.text.utils import split_by_sentence_tokenizer
-                try:
-                    transformation = SemanticSplitterNodeParser(
+        
+        splitter_mapping = {
+            "semantic": SemanticSplitterNodeParser(
                         buffer_size=transformation_params["parameters"]["buffer_size"] if "buffer_size" in transformation_params["parameters"] else 1,
-                        embed_model=OpenAIEmbedding(
-                                        model=Settings.embed_model,
-                                        api_key=os.getenv("OPENAI_API_KEY")
-                                    ),
+                        embed_model=OpenAIEmbedding(model=Settings.embed_model, api_key=os.getenv("OPENAI_API_KEY")),
                         sentence_splitter=transformation_params["parameters"]["sentence_splitter"] if "sentence_splitter" in transformation_params["parameters"] else split_by_sentence_tokenizer(),
                         include_metadata=transformation_params["parameters"]["include_metadata"],
                         include_prev_next_rel=transformation_params["parameters"]["include_prev_next_rel"],
                         breakpoint_percentile_threshold=transformation_params["parameters"]["breakpoint_percentile_threshold"] if "breakpoint_percentile_threshold" in transformation_params["parameters"] else 95
-
-                    )
-                    transformations.append(transformation)
-                except ValueError as e:
-                    raise ValueError('Kindly consult the documentation and ensure parameters are setup correctly! \n {e}')
-            if transformation_type == "sentence":
-                from llama_index.core.node_parser import SentenceSplitter
-                try:
-                    transformation = SentenceSplitter(
+            ),
+            "sentence": SentenceSplitter(
                         chunk_size=transformation_params["parameters"]["chunk_size"] if "chunk_size" in transformation_params["parameters"] else 1024,
                         chunk_overlap=transformation_params["parameters"]["chunk_overlap"] if "chunk_overlap" in transformation_params["parameters"] else 200,
                         separator=transformation_params["parameters"]["separator"] if "separator" in transformation_params["parameters"] else ' ',
                         paragraph_separator=transformation_params["parameters"]["paragraph_separator"] if "paragraph_separator" in transformation_params["parameters"] else '\n\n\n',
                         secondary_chunking_regex=transformation_params["parameters"]["secondary_chunking_regex"] if "secondary_chunking_regex" in transformation_params["parameters"] else '[^,.;。？！]+[,.;。？！]?'
-                    )
-                    transformations.append(transformation)
-                except ValueError as e:
-                    raise ValueError('Kindly consult the documentation and ensure parameters are setup correctly! \n {e}')
-            if transformation_type == "sentence_window":
-                from llama_index.core.node_parser import SentenceWindowNodeParser
-                from llama_index.core.node_parser.text.utils import split_by_sentence_tokenizer
-                try:
-                    transformation = SentenceWindowNodeParser(
+            ),
+            "sentence_window": SentenceWindowNodeParser(
                         sentence_splitter=transformation_params["parameters"]["sentence_splitter"] if "sentence_splitter" in transformation_params["parameters"] else split_by_sentence_tokenizer(), 
                         include_metadata=transformation_params["parameters"]["include_metadata"], 
                         include_prev_next_rel=transformation_params["parameters"]["include_prev_next_rel"], 
                         window_size=transformation_params["parameters"]["window_size"] if "window_size" in transformation_params["parameters"] else 3, 
                         window_metadata_key=transformation_params["parameters"]["window_metadata_key"] if "window_metadata_key" in transformation_params["parameters"] else 'window', 
                         original_text_metadata_key=transformation_params["parameters"]["original_text_metadata_key"] if "original_text_metadata_key" in transformation_params["parameters"] else 'original_text', 
-                    )
-                    transformations.append(transformation)
-                except ValueError as e:
-                    raise ValueError('Kindly consult the documentation and ensure parameters are setup correctly! \n {e}')
-            if transformation_type == "token":
-                from llama_index.core.node_parser import TokenTextSplitter
-                try:
-                    transformation = TokenTextSplitter(
+            ),
+            "token": TokenTextSplitter(
                         chunk_size=transformation_params["parameters"]["chunk_size"] if "chunk_size" in transformation_params["parameters"] else 1024,
                         chunk_overlap=transformation_params["parameters"]["chunk_overlap"] if "chunk_overlap" in transformation_params["parameters"] else 20
-                        # separator=transformation_params["parameters"]["separator"] if "separator" in transformation_params["parameters"] else ' ',
-                        # backup_separators=transformation_params["parameters"]["backup_separators"] if "backup_separators" in transformation_params["parameters"] else '\n',
-                    )
-                    transformations.append(transformation)
-                except ValueError as e:
-                    raise ValueError('Kindly consult the documentation and ensure parameters are setup correctly! \n {e}')
+            )
+        }
+
+        metadata_extractor_mapping = {
+            "title": TitleExtractor,
+            "summary": SummaryExtractor,
+            "QA": QuestionsAnsweredExtractor,
+            "keyword": KeywordExtractor
+        }
+
+        try:
+            transformations = [splitter for splitter in splitter_mapping.get(transformation_type)].extend([metadata_extractor_mapping.get(metdata_extractor)() for metdata_extractor in metadata_collectors])
+        except ValueError as e:
+            raise ValueError(f"The provided value in the transformations params caused the following error: {e}")
+
+        
     
         pipeline = IngestionPipeline(
-            transformations=[
-                transformation,
-                TitleExtractor(),
-                SummaryExtractor(),
-                QuestionsAnsweredExtractor(),
-                KeywordExtractor(),
-            ]
+            transformations=transformations
         )
-        if type(documents) == list:
+        if isinstance(documents, Document):
             nodes = pipeline.run(
                 documents=documents
             )
-        else:
+        elif isinstance(documents, list):
             nodes = pipeline.run(
                 documents=[documents]
             )
@@ -230,9 +233,6 @@ class Ingestion:
         Returns:
             VectorStoreIndex: An vector index over your collection of nodes. Can directly be used as as query engine as part of a tool.
         """
-        from llama_index.vector_stores.weaviate import WeaviateVectorStore
-        from src.vector_db import VectorDB
-
         vector_store = WeaviateVectorStore(
             weaviate_client=VectorDB().client,
             index_name=index_name,
@@ -249,8 +249,8 @@ class Ingestion:
     @staticmethod
     def consume(
         nodes: Sequence[BaseNode],
-        index_type: str = 'vector',
-        progress_ind: bool = True,
+        index_type: Literal["vector", "summary", "tree", "keyword", "graph"] = "vector",
+        progress_ind: bool = False,
         **kwargs
     ) -> SummaryIndex | TreeIndex | KeywordTableIndex | PropertyGraphIndex:
         """Consume the in memory index of choice. 
@@ -266,49 +266,34 @@ class Ingestion:
             SummaryIndex | TreeIndex | KeywordTableIndex | PropertyGraphIndex: The in memory index abstraction of choice. 
         
         """
-        if index_type == "vector":
-            from llama_index.core import VectorStoreIndex
-            index=VectorStoreIndex(
-                nodes=nodes,
-                embed_model=Settings.embed_model,
-                show_progress=progress_ind,
-                **kwargs
-            )
+        index_mapping = {
+            "vector": VectorStoreIndex,
+            "summary": SummaryIndex,
+            "tree": TreeIndex,
+            "keyword": KeywordTableIndex,
+            "graph": PropertyGraphIndex
+        }
 
-        if index_type == 'summary':
-            from llama_index.core import SummaryIndex
-            index = SummaryIndex(
-                nodes=nodes,
-                show_progress=progress_ind,
-                **kwargs
-            )
+        index = index_mapping.get(index_type)
 
-        if index_type == "tree":
-            from llama_index.core import TreeIndex
-            # TODO - further investigation to see if more parameters is necessary. 
-            index = TreeIndex(
-                nodes=nodes,
-                show_progress=progress_ind,
-                **kwargs
-            )
-
-        if index_type == "keyword":
-            from llama_index.core import KeywordTableIndex
-            # TODO - further investigation to see if more parameters is necessary. 
-            index = KeywordTableIndex(
-                nodes=nodes,
-                show_progress=progress_ind,
-                **kwargs
-            )
-
-        if index_type == 'graph':
-            from llama_index.core import PropertyGraphIndex
-            # TODO - further investigation to see if more parameters is necessary. 
-            index = PropertyGraphIndex(
-                nodes=nodes,
-                show_progress=progress_ind,
-                **kwargs
-            )
+        if isinstance(index, VectorStoreIndex):
+            vector_with_params = index.model_validate(
+                  {
+                       "nodes": nodes,
+                       "embed_model": embed_model or Settings.embed_model,
+                       "show_progress": progress_ind,
+                       **kwargs
+                  }
+             )
+            return vector_with_params
         
+        index_with_parameters = index.model_validate(
+             {
+                  "nodes": nodes,
+                  "show_progress": progress_ind,
+                  **kwargs
+             }
+        )
+                
         return index
         

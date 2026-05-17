@@ -1,3 +1,8 @@
+"""
+TODO:
+1. Update to lastest Llama index memory abstractions!
+"""
+
 from typing import (
     Optional,
     List
