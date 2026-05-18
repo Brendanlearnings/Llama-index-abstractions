@@ -3,11 +3,14 @@
 
 ## 📖 Overview
 
-This project sets out to form the base template for Generative AI projects. It provides the necessary building blocks to get your Generative AI project up and running in no time!
+This project sets out to form the base template for Generative AI projects, put together in early 2025. It provides the necessary building blocks to get your Generative AI project up and running in no time!
 
 This project is built using Python and a host of leading packages and libraries (utilizes Llama-Index and accompanying tools) setup to be ultra transferable and user friendly.  
 
 ---
+
+## 📁 Notes
+There have been various source package upgrades that needs to be accounted for an the libs should be upgraded. 
 
 ## ✨ Features
 
