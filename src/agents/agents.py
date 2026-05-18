@@ -5,8 +5,8 @@ TODO:
 3. Update the memory parameter to the latest abstractions. 
 """
 
-from src.composable_memory import ComposableMemory
-from src.llm_embedding import LLM
+from src.agents.composable_memory import ComposableMemory
+from src.agents.llm_embedding import LLM
 from typing import (
     Optional,
     List,

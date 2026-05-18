@@ -47,7 +47,7 @@ from llama_index.core.node_parser.text.utils import split_by_sentence_tokenizer
 from llama_index.core.node_parser import TokenTextSplitter
 from llama_index.vector_stores.weaviate import WeaviateVectorStore
 
-from src.vector_db import VectorDB
+from src.ingestion.vector_db import VectorDB
 
 load_dotenv()
 

@@ -1,7 +1,9 @@
 """
 TODO:
-
-Implement lazy importing of libraries!
+1. Introduce a retriever standalone tool. 
+2. Wrap router_query_engine as an actual tool with appropriate metadata for LLM discovery. 
+3. Unpack embedded tools in all List[FunctionTool] static methods. 
+4. Create actual consolidated tool list for ScrapeGraph.
 """
 
 from llama_index.core.tools import (
@@ -31,13 +33,15 @@ from llama_index.core.tools import QueryEngineTool
 from llama_index.core.selectors import BaseSelector
 from llama_index.core.schema import NodeWithScore
 from llama_index.core.llms.llm import LLM
-from typing import List, Sequence
+
 from typing import (
     Callable, 
     Any,
     Optional,
     List,
-    Dict
+    Dict,
+    Sequence,
+    Literal
 )
 import os 
 from dotenv import load_dotenv
@@ -56,9 +60,9 @@ class Tools:
     @staticmethod
     def query_engine(
         index: VectorStoreIndex | SummaryIndex | TreeIndex | KeywordTableIndex | PropertyGraphIndex,
-        name: str = None,
-        description: str = None,
-        post_processor: List[List[NodeWithScore]] = None,
+        name: Optional[str],
+        description: Optional[str],
+        post_processor: Optional[List[List[NodeWithScore]]],
         **kwargs
     ) -> QueryEngineTool:
         """Method to create a QueryEngineTool
@@ -73,7 +77,8 @@ class Tools:
         Returns:
             QueryEngineTool - for more information see https://docs.llamaindex.ai/en/stable/api_reference/tools/query_engine/.
         """
-        return QueryEngineTool.from_defaults(
+        try:
+            qe_tool = QueryEngineTool.from_defaults(
             query_engine=index.as_query_engine(
                 llm=Settings.llm,
                 node_postprocessors=post_processor
@@ -82,52 +87,47 @@ class Tools:
             description=description,
             **kwargs
         )
-    
-    @staticmethod
-    def router_query_engine(
-        routing_selector: BaseSelector,
-        query_engine_tools: Sequence[QueryEngineTool],
-        # metadata: ToolMetadata,
-        summarizer: Optional[TreeSummarize] = None,
-        verbose: bool = False
-    ) -> RouterQueryEngine:
-        """Method to create a router query engine 
-
-        A Router Query engine that take in a user query and a set of "choices" (defined by metadata), and returns one or more selected choices.
-
-        Args:
-            routing_selector (BaseSelector): The selector method to route to the desired node. Refer to [routing](src/routing.py) for the creation of this object. 
-            query_engine_tools Sequence[QueryEngineTool]: A list of query engine tools over data abstraction of your choice. Refer to the query_engine method within this package to construct the list. 
-            llm Optional(Llm): An optional LLM object for the engine. Defaults to None. 
-            summarizer Optional(TreeSummarize): Tree summarizer to summarize sub-results. Default to None. 
-            verbose (bool): Console log of engine operations. Defaults to False. Should be set to False in production settings. 
-        
-        """
-        try:
-            return RouterQueryEngine(
-                selector=routing_selector,
-                query_engine_tools=query_engine_tools,
-                llm=Settings.llm,
-                summarizer=summarizer,
-                verbose=verbose
-            )
-        
-        # .from_defaults(
-        #         selector=routing_selector,
-        #         query_engine_tools=query_engine_tools,
-        #         llm=llm,
-        #         summarizer=summarizer,
-        #         verbose=verbose,
-        #         select_multi=multi,
-        #         metadata=ToolMetadata(
-        #             description="Route to the most relevant node based of the metadata contained in the node objects.",
-        #             name="Routing_engine"
-        #         )
-        #     )
+            return qe_tool 
         except ValueError:
             raise ValueError
         except KeyError:
             raise KeyError
+        
+    
+    # @staticmethod
+    # def router_query_engine(
+    #     routing_selector: BaseSelector,
+    #     query_engine_tools: Sequence[QueryEngineTool],
+    #     # metadata: ToolMetadata,
+    #     summarizer: Optional[TreeSummarize] = None,
+    #     verbose: bool = False
+    # ) -> RouterQueryEngine:
+    #     """Method to create a router query engine 
+
+    #     A Router Query engine that take in a user query and a set of "choices" (defined by metadata), and returns one or more selected choices.
+
+    #     Args:
+    #         routing_selector (BaseSelector): The selector method to route to the desired node. Refer to [routing](src/routing.py) for the creation of this object. 
+    #         query_engine_tools Sequence[QueryEngineTool]: A list of query engine tools over data abstraction of your choice. Refer to the query_engine method within this package to construct the list. 
+    #         llm Optional(Llm): An optional LLM object for the engine. Defaults to None. 
+    #         summarizer Optional(TreeSummarize): Tree summarizer to summarize sub-results. Default to None. 
+    #         verbose (bool): Console log of engine operations. Defaults to False. Should be set to False in production settings. 
+        
+    #     """
+    #     try:
+    #         rqe_tool = 
+    #         return RouterQueryEngine(
+    #             selector=routing_selector,
+    #             query_engine_tools=query_engine_tools,
+    #             llm=Settings.llm,
+    #             summarizer=summarizer,
+    #             verbose=verbose
+    #         )
+
+    #     except ValueError:
+    #         raise ValueError
+    #     except KeyError:
+    #         raise KeyError
     
     @staticmethod
     def function_tool(
@@ -147,17 +147,23 @@ class Tools:
         Returns:
             FunctionTool - for more information see https://docs.llamaindex.ai/en/stable/api_reference/tools/function/.
         """
-        return FunctionTool.from_defaults(
-            fn=function,
-            name=name,
-            description=description
+        try:
+            func_tool = FunctionTool.from_defaults(
+                fn=function,
+                name=name,
+                description=description
             )
+        except ValueError:
+            raise ValueError
+        except KeyError:
+            raise KeyError
 
     
     @staticmethod
     def notion(
-        notion_key: str = os.getenv("NOTION_API_KEY")
-
+        notion_key: str = os.getenv("NOTION_API_KEY"),
+        name: str = "Notion",
+        description: str = "Find notes or content in Notion."
     ) -> List[FunctionTool]:
         """Create Notion tool 
         
@@ -169,20 +175,27 @@ class Tools:
         Returns:
             List[FunctionTool]: A list of tools that can be utilized by the agent - NOTE - unpack tools if other tools are used within agent. 
         """
-        spec = NotionToolSpec(
-            integration_token=notion_key
-        )
-        tool = LoadAndSearchToolSpec.from_defaults(
-            name="Notion",
-            description="This tool looks up and provides information about content within Notion.",
-            tool=spec.to_tool_list()[0]
-        )
-        return tool
+        try:
+            spec = NotionToolSpec(
+                integration_token=notion_key
+            )
+            tools = LoadAndSearchToolSpec.from_defaults(
+                name=name,
+                description=description,
+                tool=spec.to_tool_list()[0]
+            )
+            return tools
+        except ValueError:
+            raise ValueError
+        except KeyError:
+            raise KeyError
     
     @staticmethod
     def weather(
         open_weather_map_api_key = os.getenv("OPEN_WEATHER_MAP_API_KEY"),
-        temp_unit: str = 'celsius'
+        temp_unit: Literal["celsius","fahrenheit"] = "celsius",
+        name: str = "Weather",
+        description: str = "This tool can provide the today's and tomorrows weather conditions"
     ) -> List[FunctionTool]:
         """Weather tool
 
@@ -195,16 +208,22 @@ class Tools:
             List[FunctionTool]: A list of tools that can be utilized by the agent - NOTE - unpack tools if other tools are used within agent. 
         
         """
-        spec = OpenWeatherMapToolSpec(
-            key=open_weather_map_api_key,
-            temp_units=temp_unit
-        )
-        tool = LoadAndSearchToolSpec.from_defaults(
-            name="Weather",
-            description="This tool can provide the today's and tomorrows weather conditions",
-            tool=spec.to_tool_list()[0]
-        )
-        return tool
+        try:
+            spec = OpenWeatherMapToolSpec(
+                key=open_weather_map_api_key,
+                temp_units=temp_unit
+            )
+            tool = LoadAndSearchToolSpec.from_defaults(
+                name=name,
+                description=description,
+                tool=spec.to_tool_list()[0]
+            )
+            return tool
+        except ValueError:
+            raise ValueError
+        except KeyError:
+            raise KeyError
+        
     
     @staticmethod
     def duckduckgo(
@@ -219,14 +238,21 @@ class Tools:
         Returns:
             List[FunctionTool]: A list of tools that can be utilized by the agent - NOTE - unpack tools if other tools are used within agent. 
         """
-        tool = DuckDuckGoSearchToolSpec().to_tool_list()
+        try:
+            tools = DuckDuckGoSearchToolSpec().to_tool_list()
         
-        return tool
+            return tools
+        except ValueError:
+            raise ValueError
+        except KeyError:
+            raise KeyError
     
     @staticmethod
     def googlesearch(
-        api_key: str = os.getenv('GOOGLE_API_KEY'),
-        engine: str = os.getenv('GOOGLE_ENGINE'),
+        api_key: str = os.getenv("GOOGLE_API_KEY"),
+        engine: str = os.getenv("GOOGLE_ENGINE"),
+        name: str = "GoogleSearch",
+        description: str = "This tool performs google searches to retrieve information from the internet.",
         **kwargs
     ) -> List[FunctionTool]:
         """Google Search tool.
@@ -234,23 +260,28 @@ class Tools:
         This tool provides functionality to do a web search using google - optionally you can set up custom engines that has predefined whitelisted websites for higher level of trust. For more information see - https://llamahub.ai/l/tools/llama-index-tools-google?from=tools.
 
         Args:
-            api_key (str): Your GCP key - https://console.cloud.google.com/ -> API's & Services -> Credentials -> Create Credentials -> API key. 
-            engine (str): The engine's name. For setup see information -> https://programmablesearchengine.google.com/controlpanel/all
+            api_key (str): Your GCP key - https://console.cloud.google.com/ -> API"s & Services -> Credentials -> Create Credentials -> API key. 
+            engine (str): The engine"s name. For setup see information -> https://programmablesearchengine.google.com/controlpanel/all
 
         Returns:
             List[FunctionTool]: A list of tools that can be utilized by the agent - NOTE - unpack tools if other tools are used within agent. 
         """
-        spec = GoogleSearchToolSpec(
-            key=api_key,
-            engine=engine
-        )
-        tool = LoadAndSearchToolSpec.from_defaults(
-            name='GoogleSearch',
-            description='This tool performs google searches to retrieve information from the web.',
-            tool=spec.to_tool_list()[0],
-            **kwargs
-        ).to_tool_list()
-        return tool
+        try:
+            spec = GoogleSearchToolSpec(
+                key=api_key,
+                engine=engine
+            )
+            tool = LoadAndSearchToolSpec.from_defaults(
+                name=name,
+                description=description,
+                tool=spec.to_tool_list()[0],
+                **kwargs
+            ).to_tool_list()
+            return tool
+        except ValueError:
+            raise ValueError
+        except KeyError:
+            raise KeyError
 
     @staticmethod
     def httprequest(
@@ -258,7 +289,7 @@ class Tools:
     ) -> RequestsToolSpec:
         """Request tool 
 
-        This tool provides functionality to perform HTTP requests. For more information see - https://llamahub.ai/l/tools/llama-index-tools-requests?from=tools.
+        This tool provides functionality to perform HTTP requests. For more information see - https://try:hub.ai/l/tools/llama-index-tools-requests?from=tools.
 
         Args:
             header (dict): For security reasons, you must specify the hostname for the headers that you wish to provide. As a minimum the header should contain the `Authorization` token and `Content Type`.
@@ -267,20 +298,25 @@ class Tools:
             List[FunctionTool]:  A list of tools that can be utilized by the agent - NOTE - unpack tools if other tools are used within agent. 
         
         """
-        spec = RequestsToolSpec(domain_headers=header)
-        tool = LoadAndSearchToolSpec.from_defaults(
-            name='HTTPRequest',
-            description="This tool can perform any HTTP requests.",
-            tool=spec.to_tool_list()[0]
-        )
-        return tool
+        try:
+            spec = RequestsToolSpec(domain_headers=header)
+            tool = LoadAndSearchToolSpec.from_defaults(
+                name="HTTPRequest",
+                description="This tool can perform any HTTP requests.",
+                tool=spec.to_tool_list()[0]
+            )
+            return tool
+        except ValueError:
+            raise ValueError
+        except KeyError:
+            raise KeyError
     
     @staticmethod
     def scrapegraph(
         prompt: str,
         url: str,
         api_key: str = os.getenv("SCRAPEGRAPH"),
-        return_type: str = 'smart',
+        return_type: Literal["smart", "markdown", "local"] = "smart",
         schemas: list | dict = None,
         raw: str = None
     ) -> List[Dict]:
@@ -300,27 +336,28 @@ class Tools:
             FunctionTool: Generic function calling tool for usage by an agent. 
         """
         graph = ScrapegraphToolSpec()
-        if return_type == 'smart':
-            response = graph.scrapegraph_smartscraper(
-                prompt=prompt,
-                url=url,
-                api_key=api_key,
-                schema=schemas
-            )
-        if return_type == 'markdown':
-            response = graph.scrapegraph_markdownify(
-                url=url,
-                api_key=api_key
-            )
-        if return_type == 'local':
-            if type(raw) == str:
-                response = graph.scrapegraph_local_scrape(
-                    text=raw,
-                    api_key=api_key
-                )
-            else:
-                raise ValueError('Kindly ensure you provide a valid string object.')
 
-        return response
-        
-        
+
+        DEFAULT_PARAMETERS = {
+            "smart": {
+                "prompt": prompt,
+                "url": url,
+                "api_key": api_key,
+                "schema": schemas
+            },
+            "markdown": {
+                "url": url,
+                "api_key": api_key
+            },
+            "local":{
+                "text": raw,
+                "api_key": api_key
+            }
+        }
+
+        match return_type:
+            case "smart": response = graph.scrapegraph_smartscraper(DEFAULT_PARAMETERS.get("smart"))
+            case "markdown": response = graph.scrapegraph_markdownify(DEFAULT_PARAMETERS.get("markdown"))
+            case "local": response = graph.scrapegraph_local_scrape(DEFAULT_PARAMETERS.get("local"))
+
+        return response 

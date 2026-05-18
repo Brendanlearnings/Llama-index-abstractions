@@ -1,9 +1,21 @@
+"""
+TODO:
+1. Enable support for additional foundation LLM's (Cluade).
+2. Enable support for additional embedding models. 
+"""
+
 from dotenv import load_dotenv
 from typing import (
-    Any
+    Any,
+    Literal
 )
 import os
 from llama_index.core import Settings
+from llama_index.llms.openai import OpenAI
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.llms.azure_openai import AzureOpenAI
+from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
+
 
 load_dotenv()
 
@@ -56,55 +68,60 @@ class LLM:
 
     def llm(
         self, 
-        host: str = 'OpenAI',
+        provider: Literal["OpenAI", "AzureOpenAI"] = "OpenAI",
         **kwargs: Any
-        ):
+        ) -> OpenAI | AzureOpenAI:
 
         """Large Language Model
 
         This method updates the settings of the Llama index LLM and returns the instantiated LLM 
 
         Args:
-            host (str): The deployment/host for the LLM. Current options are: [OpenAI, AzureOpenAI]. Defaults to OpenAI.  
+            provider (str): The deployment/host for the LLM. Current options are: [OpenAI, AzureOpenAI]. Defaults to OpenAI.  
 
         Returns:
             LLM: The large language model as configured. 
 
         Raises:
-            TODO    
+            ValueError: If provided LLM is not avialable.
+            TODO - raise on failure to ping LLM in current config.    
 
         """
-        if host == 'OpenAI':
-            from llama_index.llms.openai import OpenAI
-            llm = Settings.llm = OpenAI(
-                model=self._llm_model,
-                temperature=self._llm_temperature,
-                max_tokens=self._output_tokens,
-                api_key=self.api_key,
-                **kwargs
-            )
-        if host == 'AzureOpenAI':
-            from llama_index.llms.azure_openai import AzureOpenAI
-            llm = Settings.llm = AzureOpenAI(
-                model=self._llm_model,
-                temperature=self._llm_temperature,
-                max_tokens=self._output_tokens,
-                api_key=self.api_key,
-                **kwargs
+        provider_mapping = {
+            "OpenAI": OpenAI,
+            "AzureOpenAI": AzureOpenAI
+        }
+        
+        try:
+            llm = provider_mapping.get(provider).model_validate(
+                {
+                    "model": self._llm_model,
+                    "temperature": self._llm_temperature,
+                    "max_tokens": self._output_tokens,
+                    "api_key": self.api_key,
+                    **kwargs
+                }
             )
 
-        return llm 
+            llm = llm = Settings.llm 
+
+            return llm 
+
+        except ValueError as e:
+            raise ValueError(f"The provided provider does not exist: {e}")
+
     
     def embed_model(
         self,
-        host: str = 'OpenAI',
-        **kwargs: Any):
+        provider: Literal["OpenAI", "AzureOpenAI"] = 'OpenAI',
+        **kwargs
+        ) -> OpenAIEmbedding | AzureOpenAIEmbedding:
         """Embedding model 
 
         This method updates the settings of the Llama Index embedding model and returns the instantiated embed model. 
 
         Args:
-            host (str): The deployment/host for the LLM. Current options are: [OpenAI, AzureOpenAI]. Defaults to OpenAI.
+            provider (str): The deployment/host for the LLM. Current options are: [OpenAI, AzureOpenAI]. Defaults to OpenAI.
 
         Returns:
             Embedding Model: The embedding model as configured. 
@@ -113,19 +130,25 @@ class LLM:
             TODO 
         
         """
-        if host == 'OpenAI':
-            from llama_index.embeddings.openai import OpenAIEmbedding
-            embed_model = Settings.embed_model = OpenAIEmbedding(
-                model=self._embeds_model,
-                api_key=self.api_key,
-                **kwargs
+        provider_mappings = {
+            "OpenAI": OpenAIEmbedding,
+            "AzureOpenAI": AzureOpenAIEmbedding
+        }
+
+        try:
+            embed_model = provider_mappings.get(provider).model_validate(
+                {
+                    "model": self._embeds_model,
+                    "api_key": self.api_key,
+                    **kwargs
+                }
             )
-        if host == 'AzureOpenAI':
-            from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
-            embed_model = Settings.embed_model = AzureOpenAIEmbedding(
-                model=self._embeds_model,
-                api_key=self.api_key,
-                **kwargs
-            )
-        return embed_model
+            embed_model = embed_model = Settings.embed_model 
+        
+            return embed_model
+        except ValueError as e:
+            raise ValueError(f"An invalid provider was given: {e}")
+
+
+        
     
