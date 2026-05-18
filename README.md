@@ -91,13 +91,19 @@ agent.chat('What was the revenue generated for 2024 for entity 1244?')
     ├── config.toml             # Configuration file for themes and Streamlit behavior. 
 ├── documents/                  # Directory for local documents. 
 ├── src/                        # Package and source code location
+    ├── agents/                  
+        ├── agent.py                    # Agent package - available to import. 
+        ├── composable_memory.py        # Memory package - available to import.
+        ├── llm_embedding.py            # llm & embedding package - available to import. 
+        ├── tools.py                    # Tools package - available to import.
+        ├── routing.py                  # Router package - available to import.
+    ├── ingestion/        
+        ├── ingestion.py            # Ingestion package - available to import.     
+        ├── vector_db.py            # Weaviate package - available to import.  
+    ├── querying/   
+        ├── postprocessing.py            # Post Processing package - available to import.  
+        ├── reference_list.py            # Reference list package - availalbe to import. 
     ├── .env                    # Environment file - needs to be configured/created before development begins.      
-    ├── agent.py                # Agent package - available to import. 
-    ├── composable_memory.py    # Memory package - available to import. 
-    ├── ingestion.py            # Ingestion package - available to import.
-    ├── llm_embedding.py        # llm & embedding package - available to import. 
-    ├── tools.py                # Tools package - available to import. 
-    ├── ...                     # All other associated abstractions
 ├── templates/                  # Root template directory
     ├── outputs/                # Structured output (Pydantic) custom templates. 
     ├── prompts/                # Custom prompt templates.
