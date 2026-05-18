@@ -10,7 +10,7 @@ This project is built using Python and a host of leading packages and libraries 
 ---
 
 ## 📁 Notes
-There have been various source package upgrades that needs to be accounted for an the libs should be upgraded. 
+There have been various source package upgrades that needs to be accounted for and the libs should be upgraded. 
 
 ## ✨ Features
 
